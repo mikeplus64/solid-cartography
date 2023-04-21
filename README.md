@@ -1,7 +1,5 @@
 # solid-cartography
 
-This package provides a bunch of utility control flow functions and components 
-for use with solid-js.
+Type-safe routing and data layer for SolidJS.
 
-The async components are experimental and using them without a HTML component 
-wrapping it can cause infinite loops due to reasons I don't understand.
+Built with lessons from `solid-typefu-router5` in mind.
