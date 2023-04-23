@@ -28,7 +28,6 @@
     "@types/node": "^14.18.36",
     "@types/uuid": "^9.0.1",
     "babel-preset-solid": "^1.6.9",
-    "dts-jest": "^26.0.0",
     "jest": "^29.5.0",
     "jest-fast-check": "^2.0.0",
     "rollup": "^2.79.1",

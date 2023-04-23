@@ -1,35 +1,39 @@
 import { O, S, A, U } from "ts-toolbelt";
 
+export type Expand<R> = A.Compute<_Expand<R>>;
+
+type _Expand<R> = R extends object
+  ? keyof R extends never
+    ? {}
+    : _Expand1<R> extends infer E
+    ? U.IntersectOf<E[keyof E]>
+    : never
+  : { value: R };
+
 type _Expand1<R> = {
   [SourceKey in keyof R & string]: S.Split<
     SourceKey,
     "/"
   > extends infer K extends string[]
     ? R[SourceKey] extends infer Value extends object
-      ? O.P.Record<K, _Expand<Value>>
+      ? O.P.Record<K, { leaf: true } & _Expand<Value>>
       : R[SourceKey]
     : never;
 };
 
-type _Expand<R> = R extends object
-  ? keyof R extends never
-    ? { leaf: true }
-    : _Expand1<R> extends infer E
-    ? U.IntersectOf<E[keyof E]>
-    : never
-  : { leaf: true; value: R };
-
-export type Expand<R> = A.Compute<_Expand<R>>;
-
+/**
+ * 'Expand' a record by splitting keys that have slashes in them, and mark the
+ * leaf nodes in the return record
+ */
 export function expand<R extends object>(i0: R): Expand<R> {
   const r: any = {};
-  const q: any[] = [i0];
+  const q: [string[], any][] = [[[], i0]];
   while (q.length > 0) {
-    const i = q.pop();
+    const [pfix, i] = q.pop()!;
     if (typeof i !== "object" && i !== null) continue;
     for (const k in i) {
-      setPath(k.split("/"), i[k]);
-      q.push(i[k]);
+      setPath([...pfix, ...k.split("/")], i[k]);
+      q.push([[...pfix, k], i[k]]);
     }
   }
   function setPath(path: string[], value: any) {
