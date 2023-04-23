@@ -1,8 +1,7 @@
 import { Store } from "solid-js/store";
 import { JSX } from "solid-js";
-import { F, A, S } from "ts-toolbelt";
-import { PrefixPathProps } from "solid-typefu-router5/dist/components/Switch";
-import { Uuid } from './uuidshim'; 
+import { F, A, S, L, O, B, U } from "ts-toolbelt";
+import { Uuid } from "./uuidshim";
 
 export interface IParamCodec<A> {
   decode(input: string): A | undefined;
@@ -12,12 +11,6 @@ export interface IParamCodec<A> {
 export interface Param {
   param: string;
   kind: string;
-}
-
-export enum RNKind {
-  Segment,
-  Param,
-  Query,
 }
 
 export namespace RN {
@@ -33,19 +26,22 @@ export namespace RN {
     | Query<string, string>;
 
   export interface Segment<Name extends string> {
+    leaf?: true;
     kind: Kind.Segment;
     name: Name;
   }
 
   export interface Param<Name extends string, T extends string> {
+    leaf?: true;
     kind: Kind.Param;
-    name: Name;
+    name: `.${Name}`;
     type: T;
   }
 
   export interface Query<Name extends string, T extends string> {
+    leaf?: true;
     kind: Kind.Query;
-    name: Name;
+    name: `?${Name}`;
     type: T;
   }
 
@@ -53,78 +49,106 @@ export namespace RN {
     | Param<Name, T>
     | Query<Name, T>;
 
-  export type Parse<Name extends string> = 
-    Name extends `?${infer S}:${infer T}`
+  export type Parse<Name extends string> = Name extends `?${infer S}:${infer T}`
     ? Query<Trim<S>, Trim<T>>
     : Name extends `?${infer S}`
-    ? Param<Trim<S>, string>
+    ? Query<Trim<S>, string>
     : Name extends `.${infer S}:${infer T}`
     ? Param<Trim<S>, Trim<T>>
     : Name extends `.${infer S}`
     ? Param<Trim<S>, "string">
     : Segment<Trim<Name>>;
-  
-  export function parse(name: string): RN.Type | undefined {
-    if (name === '') return undefined;
+
+  export function parse(name: string): Type {
+    if (name === "") throw new Error("empty route");
     if (name[0] === ".") {
       const spl = name.split(":");
       const key = spl[0].trim();
       const ty = spl?.[1]?.trim() ?? "string";
       return {
         kind: RN.Kind.Query,
-        name: key,
+        name: `?${key}`,
         type: ty,
-      }
+      };
     } else if (name[0] === ".") {
       const spl = name.split(":");
       const key = spl[0].trim();
       const ty = spl?.[1]?.trim() ?? "string";
       return {
         kind: RN.Kind.Param,
-        name: key,
+        name: `.${key}`,
         type: ty,
-      }
+      };
     } else {
       return {
         kind: RN.Kind.Segment,
         name: name.trim(),
-      }
+      };
     }
   }
 }
 
-export type _RouteNodes<R, Names extends string[]> = R extends Record<
-  string,
-  any
->
+export function set<Set extends readonly A.Key[]>(
+  ...args: Set
+): IsSet<Set> extends 1 ? AsSet<Set> : undefined {
+  const r: Record<A.Key, number> = {};
+  for (let i = 0; i < args.length; i++) {
+    r[args[i]] = i;
+  }
+  return r as any;
+}
+
+export type IsSet<L extends readonly A.Key[]> =
+  L.ObjectOf<L> extends infer Inverted extends { [P in keyof Inverted]: A.Key }
+    ? O.Invert<Inverted> extends never
+      ? 0
+      : 1
+    : 0;
+
+export type AsSet<L extends readonly A.Key[]> =
+  L.ObjectOf<L> extends infer Inverted extends { [P in keyof Inverted]: A.Key }
+    ? O.Invert<Inverted> extends infer I
+      ? I extends never
+        ? never
+        : {
+            [K in keyof I]: I[K] extends `${infer N extends number}`
+              ? N
+              : never;
+          }
+      : never
+    : never;
+
+type _RouteNodes<R, Names extends string[]> = R extends Record<string, any>
   ? {
       [Name in keyof R &
         string]: RN.Parse<Name> extends infer Node extends RN.Type
-        ? Node &
-            (R[Name] extends Record<string, any>
-              ? {
-                  key: S.Join<[...Names, Node["name"]], "/">;
-                  children: _RouteNodes<R[Name], [...Names, Node["name"]]>;
-                }
-              : {
-                  key: S.Join<[...Names, Node["name"]], "/">;
-                })
+        ? Node extends RN.Type
+          ? Node &
+              (R[Name] extends Record<string, any>
+                ? {
+                    key: S.Join<[...Names, Node["name"]], "/">;
+                    children: _RouteNodes<R[Name], [...Names, Node["name"]]>;
+                  } & IsLeaf<R[Name]>
+                : {
+                    leaf: true;
+                    key: S.Join<[...Names, Node["name"]], "/">;
+                  })
+          : never
         : never;
     }
   : 0;
 
+export type IsLeaf<L> = L extends { leaf: true } ? { leaf: true } : {};
+
 export type RouteNodes<R> = _RouteNodes<R, []>;
 
-export type _RouterTypes<R> =
-  (R extends { type: infer Type extends string } 
-    ? Type
-    : never) |
-  (R extends { children: Record<string, infer Child>  }
-    ? _RouterTypes<Child>
-    : never )
- 
-type RouterTypes<R> = 
-  Record<Extract<_RouterTypes<R>, string>, 0>;
+type _RouterTypes<R> =
+  | (R extends { type: infer Type extends string } ? Type : never)
+  | (R extends { children: Record<string, infer Child> }
+      ? _RouterTypes<Child>
+      : never);
+
+export type RouterTypes<R> = Record<Extract<_RouterTypes<R>, string>, 0>;
 
 export type ParseRouter<R> = RouteNodes<R> extends infer Router
   ? {
@@ -133,102 +157,124 @@ export type ParseRouter<R> = RouteNodes<R> extends infer Router
     }
   : never;
 
-export type Router = { [k: string]: 0 | Router };
+export type Router = { [k: string]: A.Key | Router };
 
-export type SomeParsedRouterNode = (RN.Type & {
-  id: number;
-  key: string;
-  children: Record<string, SomeParsedRouterNode>
-}) | {
-  kind: "root",
-  children: Record<string, SomeParsedRouterNode>
-};
+export type SomeParsedRouterNode =
+  | (RN.Type & {
+      id: number;
+      key: string;
+      children: Record<string, SomeParsedRouterNode>;
+    })
+  | {
+      kind: "root";
+      children: Record<string, SomeParsedRouterNode>;
+    };
 
 export type SomeParsedRouter = {
-  router: SomeParsedRouterNode,
-  types: Record<string, 0>
-}
+  router: SomeParsedRouterNode;
+  types: Record<string, 0>;
+};
 
 type ParamTypeMapKind = Record<string, IParamCodec<any>>;
 
 function paramCodec<T>(
   decode: (input: string) => T | undefined,
-  encode: (value: T) => string,
+  encode: (value: T) => string
 ): IParamCodec<T> {
-  return {encode, decode}
-} 
+  return { encode, decode };
+}
 
 const defaultParamTypeMap = {
-  string: paramCodec<string>(i => i, v => v),
+  string: paramCodec<string>(
+    (i) => i,
+    (v) => v
+  ),
   number: paramCodec<number>(
-    i => {
+    (i) => {
       const r = Number.parseFloat(i);
       if (Number.isFinite(r)) return r;
       return undefined;
     },
-    v => String(v)  
+    (v) => String(v)
   ),
   integer: paramCodec<number>(
-    i => {
+    (i) => {
       const r = Number.parseInt(i);
       if (Number.isSafeInteger(r)) return r;
       return undefined;
     },
-    v => String(v),
+    (v) => String(v)
   ),
   natural: paramCodec<number>(
-    i => {
+    (i) => {
       const r = Number.parseInt(i);
       if (Number.isSafeInteger(r) && r >= 0) return r;
       return undefined;
     },
-    v => String(v),
+    (v) => String(v)
   ),
   get uuid() {
     if (Uuid === undefined) {
-      throw new Error("solid-cartography error: The 'uuid' package is required for uuid parsing to work");
+      throw new Error(
+        "solid-cartography error: The 'uuid' package is required for uuid parsing to work"
+      );
     }
     return paramCodec<string>(
-      i => Uuid!.stringify(Uuid!.parse(i)),
-      v => Uuid!.stringify(Uuid!.parse(v))
-    )
+      (i) => Uuid!.stringify(Uuid!.parse(i)),
+      (v) => Uuid!.stringify(Uuid!.parse(v))
+    );
   },
 } as const satisfies ParamTypeMapKind;
 
-function router<
-  const R extends Router,
+export function router<
+  R extends Router,
   C extends A.Compute<ParseRouter<R>> = A.Compute<ParseRouter<R>>,
-  NeededTypes extends Record<keyof C['types'], IParamCodec<any>> = Record<keyof C['types'], IParamCodec<any>>,
+  NeededTypes extends Record<keyof C["types"], IParamCodec<any>> = Record<
+    keyof C["types"],
+    IParamCodec<any>
+  >
 >(
-  definition: typeof defaultParamTypeMap extends NeededTypes ? R : 
-  `Unsupported param type ${Extract<keyof Omit<NeededTypes, keyof typeof defaultParamTypeMap>, string>}`
+  definition: typeof defaultParamTypeMap extends NeededTypes
+    ? R
+    : `Unsupported param type ${Extract<
+        keyof Omit<NeededTypes, keyof typeof defaultParamTypeMap>,
+        string
+      >}`
 ): A.Compute<ParseRouter<R>>;
 
-function router<
-  const R extends Router,
+export function router<
+  R extends Router,
   C extends A.Compute<ParseRouter<R>> = A.Compute<ParseRouter<R>>,
-  NeededTypes extends Record<keyof C['types'], IParamCodec<any>> = Record<keyof C['types'], IParamCodec<any>>,
+  NeededTypes extends Record<keyof C["types"], IParamCodec<any>> = Record<
+    keyof C["types"],
+    IParamCodec<any>
+  >
 >(definition: R, typeMap: NeededTypes): A.Compute<ParseRouter<R>>;
 
-function router<
-  const R extends Router,
+export function router<
+  R extends Router,
   C extends A.Compute<ParseRouter<R>> = A.Compute<ParseRouter<R>>,
-  NeededTypes extends Record<keyof C['types'], IParamCodec<any>> = Record<keyof C['types'], IParamCodec<any>>,
-  const TM extends NeededTypes = Extract<typeof defaultParamTypeMap, NeededTypes>
+  NeededTypes extends Record<keyof C["types"], IParamCodec<any>> = Record<
+    keyof C["types"],
+    IParamCodec<any>
+  >,
+  TM extends NeededTypes = Extract<typeof defaultParamTypeMap, NeededTypes>
 >(
-  definition: R, 
+  definition: R,
   typeMap: TM = defaultParamTypeMap as any as TM
 ): A.Compute<ParseRouter<R>> {
   const types: Record<string, IParamCodec<unknown>> = {};
   const router: SomeParsedRouterNode = { kind: "root", children: {} };
   let nextId = 0;
-  const q: [string, Router, SomeParsedRouterNode][] = [['', definition, router]];
+  const q: [string, Router, SomeParsedRouterNode][] = [
+    ["", definition, router],
+  ];
   while (q.length > 0) {
     const [prefix, here, out] = q.pop()!;
     for (const key in here) {
       const rn: RN.Type | undefined = RN.parse(key);
       if (rn === undefined) continue;
-      const next = prefix + '/' + rn.name;
+      const next = prefix + "/" + rn.name;
       const node: SomeParsedRouterNode = {
         ...rn,
         key: next,
@@ -242,7 +288,7 @@ function router<
       }
       out.children[key] = node;
       const inner = here[key];
-      if (inner !== undefined && typeof inner !== 'number') {
+      if (typeof inner === "object") {
         q.push([next, inner, node]);
       }
     }
@@ -260,10 +306,6 @@ export type ParseParamInto<
     ? Params & { [param in Param]: Kind }
     : undefined
   : undefined;
-
-type ParamKindsOf<O extends Record<string, Param>> = {
-  [K in O[keyof O]["kind"]]: null;
-};
 
 /****************
  * Utility types
@@ -296,8 +338,22 @@ export type _Intercalate1<
   T,
   Sep extends string,
   Acc extends string
-> = T extends [infer X]
-  ? `${Acc}${Sep}${Extract<X, string>}`
-  : T extends [infer X, ...infer XS]
-  ? _Intercalate1<XS, Sep, `${Acc}${Sep}${Extract<X, string>}`>
+> = T extends [infer X extends string]
+  ? `${Acc}${Sep}${X}`
+  : T extends [infer X extends string, ...infer XS]
+  ? _Intercalate1<XS, Sep, `${Acc}${Sep}${X}`>
+  : Acc;
+
+export type IntercalateNames<T> = T extends [{ name: infer X extends string }]
+  ? X
+  : T extends [{ name: infer X extends string }, ...infer XS]
+  ? _IntercalateNames1<XS, X>
+  : "";
+
+export type _IntercalateNames1<T, Acc extends string> = T extends [
+  { name: infer X extends string }
+]
+  ? `${Acc}/${X}`
+  : T extends [{ name: infer X extends string }, ...infer XS]
+  ? _IntercalateNames1<XS, `${Acc}/${X}`>
   : Acc;
